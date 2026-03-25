@@ -1941,6 +1941,37 @@ describe("kill", () => {
     });
   });
 
+  it("does not ignore runtime destroy failures with unrelated not-found text", async () => {
+    const failRuntime: Runtime = {
+      ...mockRuntime,
+      destroy: vi.fn().mockRejectedValue(new Error("Config key not found")),
+      isAlive: vi.fn().mockRejectedValue(new Error("runtime status unavailable")),
+    };
+    const registryWithFail: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return failRuntime;
+        if (slot === "workspace") return mockWorkspace;
+        return null;
+      }),
+    };
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithFail });
+    await expect(sm.kill("app-1")).rejects.toThrow("Config key not found");
+    expect(readMetadataRaw(sessionsDir, "app-1")).toMatchObject({
+      status: "working",
+    });
+    expect(readArchivedMetadataRaw(sessionsDir, "app-1")).toBeNull();
+  });
+
   it("tolerates workspace destroy failures when the workspace is already gone", async () => {
     const managedWorktree = join(
       getWorktreesDir(config.configPath, config.projects["my-app"]!.path),
@@ -1962,6 +1993,30 @@ describe("kill", () => {
     expect(readArchivedMetadataRaw(sessionsDir, "app-1")).toMatchObject({
       status: "killed",
     });
+  });
+
+  it("does not ignore workspace destroy failures with unrelated not-found text", async () => {
+    const managedWorktree = join(
+      getWorktreesDir(config.configPath, config.projects["my-app"]!.path),
+      "app-1",
+    );
+    mkdirSync(managedWorktree, { recursive: true });
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: managedWorktree,
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+    vi.mocked(mockWorkspace.destroy).mockRejectedValueOnce(new Error("Config key not found"));
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await expect(sm.kill("app-1")).rejects.toThrow("Config key not found");
+    expect(readMetadataRaw(sessionsDir, "app-1")).toMatchObject({
+      status: "killed",
+    });
+    expect(readMetadataRaw(sessionsDir, "app-1")?.["runtimeHandle"]).toBeUndefined();
+    expect(readArchivedMetadataRaw(sessionsDir, "app-1")).toBeNull();
   });
 
   it("allows retrying kill after workspace destroy fails once", async () => {

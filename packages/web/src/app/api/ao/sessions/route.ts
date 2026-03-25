@@ -1,5 +1,5 @@
 import { checkConfiguredAuth } from "@/app/api/ao/_auth";
-import { toAODashboardSession } from "@/lib/ao-sessions";
+import { toDashboardSessionWithNormalizedProject } from "@/lib/ao-sessions";
 import type { DashboardSession } from "@/lib/types";
 import { getServices } from "@/lib/services";
 import { filterProjectSessions } from "@/lib/project-utils";
@@ -38,7 +38,9 @@ export async function GET(request: Request): Promise<Response> {
     const { searchParams } = new URL(request.url);
     const project = searchParams.get("project");
     const coreSessions = filterProjectSessions(await sessionManager.list(), project, config.projects);
-    let sessions = coreSessions.map((session) => toAODashboardSession(session, config));
+    let sessions = coreSessions.map((session) =>
+      toDashboardSessionWithNormalizedProject(session, config),
+    );
 
     sessions = filterByStatus(sessions, searchParams.get("status"));
 

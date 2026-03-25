@@ -13,13 +13,6 @@ export function normalizeSessionProjectId(
   return resolveProjectIdForSessionId(config, session.id) ?? session.projectId;
 }
 
-export function toAODashboardSession(
-  session: Session,
-  config: OrchestratorConfig,
-): DashboardSession {
-  return toDashboardSessionWithNormalizedProject(session, config);
-}
-
 export function toDashboardSessionWithNormalizedProject(
   session: Session,
   config: OrchestratorConfig,

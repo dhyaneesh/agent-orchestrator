@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import type { OrchestratorConfig } from "@composio/ao-core";
 import { getCachedConfig } from "./config-cache.js";
 import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "./observability.js";
@@ -40,6 +41,12 @@ function unauthorized(request: Request, context?: AuthContext): Response {
   return jsonWithCorrelation({ error: "Unauthorized" }, { status: 401 }, correlationId);
 }
 
+function tokensMatch(providedToken: string, expectedToken: string): boolean {
+  const providedDigest = crypto.createHash("sha256").update(providedToken, "utf8").digest();
+  const expectedDigest = crypto.createHash("sha256").update(expectedToken, "utf8").digest();
+  return crypto.timingSafeEqual(providedDigest, expectedDigest);
+}
+
 export function checkAuth(
   request: Request,
   token: string | undefined,
@@ -58,7 +65,7 @@ export function checkAuth(
   }
 
   const match = /^\s*Bearer\s+(.+?)\s*$/i.exec(header);
-  if (!match || match[1] !== normalizedToken) {
+  if (!match || !tokensMatch(match[1], normalizedToken)) {
     return unauthorized(request, context);
   }
 

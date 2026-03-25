@@ -90,8 +90,20 @@ function errorIncludesMissingResource(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const e = err as Error & { stderr?: string; stdout?: string; code?: string };
   const combined = [err.message, e.stderr, e.stdout, e.code].filter(Boolean).join("\n");
-  return /already gone|session not found|not found|does not exist|no such file or directory|enoent/i.test(
-    combined,
+  if (
+    /\balready gone\b/i.test(combined) ||
+    /\bsession not found\b/i.test(combined) ||
+    /\bworkspace not found\b/i.test(combined) ||
+    /\bworktree not found\b/i.test(combined) ||
+    /\bno such file or directory\b/i.test(combined) ||
+    /\benoent\b/i.test(combined)
+  ) {
+    return true;
+  }
+
+  return (
+    /\bdoes not exist\b/i.test(combined) &&
+    /\b(session|workspace|worktree|path|file|directory)\b/i.test(combined)
   );
 }
 

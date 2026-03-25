@@ -1,6 +1,6 @@
 import type { Session, SessionManager } from "@composio/ao-core";
 import { checkConfiguredAuth } from "@/app/api/ao/_auth";
-import { toAODashboardSession } from "@/lib/ao-sessions";
+import { toDashboardSessionWithNormalizedProject } from "@/lib/ao-sessions";
 import { getServices } from "@/lib/services";
 import { validateIdentifier } from "@/lib/validation";
 
@@ -37,7 +37,7 @@ export async function GET(
       return Response.json({ error: "Session not found" }, { status: 404 });
     }
 
-    return Response.json(toAODashboardSession(session, config));
+    return Response.json(toDashboardSessionWithNormalizedProject(session, config));
   } catch (error) {
     return Response.json({ error: getErrorMessage(error) }, { status: 500 });
   }
