@@ -176,6 +176,38 @@ describe("start / stop", () => {
     // Should not throw on double stop
     lm.stop();
   });
+
+  it("records observability when an individual polled session check fails", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(mockSessionManager.list).mockResolvedValue([
+        makeSession({ id: "bad/id", status: "spawning" }),
+      ]);
+
+      const lm = createLifecycleManager({
+        config,
+        registry: mockRegistry,
+        sessionManager: mockSessionManager,
+      });
+
+      lm.start(1_000);
+      await vi.advanceTimersByTimeAsync(0);
+      lm.stop();
+
+      const summary = readObservabilitySummary(config);
+      expect(
+        summary.projects["my-app"]?.recentTraces.some(
+          (trace) =>
+            trace.operation === "lifecycle.check" &&
+            trace.sessionId === "bad/id" &&
+            trace.outcome === "failure" &&
+            trace.reason?.includes("Invalid session ID: bad/id"),
+        ),
+      ).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("check (single session)", () => {

@@ -602,6 +602,39 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     );
   }
 
+  function recordSessionCheckFailure(
+    session: Session,
+    correlationId: string,
+    error: unknown,
+  ): void {
+    const reason = error instanceof Error ? error.message : String(error);
+    observer.recordOperation({
+      metric: "lifecycle_poll",
+      operation: "lifecycle.check",
+      outcome: "failure",
+      correlationId,
+      projectId: session.projectId,
+      sessionId: session.id,
+      reason,
+      data: {
+        phase: "poll",
+      },
+      level: "error",
+    });
+    observer.setHealth({
+      surface: "lifecycle.session-check",
+      status: "error",
+      projectId: session.projectId,
+      correlationId,
+      reason,
+      details: {
+        projectId: session.projectId,
+        sessionId: session.id,
+      },
+    });
+    process.stderr.write(`[ao] lifecycle check failed for ${session.id}: ${reason}\n`);
+  }
+
   function makeFingerprint(ids: string[]): string {
     return [...ids].sort().join(",");
   }
@@ -911,8 +944,17 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         return tracked !== undefined && tracked !== s.status;
       });
 
-      // Poll all sessions concurrently
-      await Promise.allSettled(sessionsToCheck.map((s) => checkSession(s)));
+      // Poll all sessions concurrently and record individual failures so one
+      // bad session cannot disappear behind the batch-level success path.
+      const pollResults = await Promise.allSettled(sessionsToCheck.map((s) => checkSession(s)));
+      let failedSessionCount = 0;
+      for (const [index, result] of pollResults.entries()) {
+        if (result.status !== "rejected") continue;
+        failedSessionCount++;
+        const session = sessionsToCheck[index];
+        if (!session) continue;
+        recordSessionCheckFailure(session, correlationId, result.reason);
+      }
 
       // Prune stale entries from states and reactionTrackers for sessions
       // that no longer appear in the session list (e.g., after kill/cleanup)
@@ -953,7 +995,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           correlationId,
           projectId: scopedProjectId,
           durationMs: Date.now() - startedAt,
-          data: { sessionCount: sessions.length, activeSessionCount: activeSessions.length },
+          data: {
+            sessionCount: sessions.length,
+            activeSessionCount: activeSessions.length,
+            failedSessionCount,
+          },
           level: "info",
         });
         observer.setHealth({
@@ -965,6 +1011,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             projectId: scopedProjectId,
             sessionCount: sessions.length,
             activeSessionCount: activeSessions.length,
+            failedSessionCount,
           },
         });
       }

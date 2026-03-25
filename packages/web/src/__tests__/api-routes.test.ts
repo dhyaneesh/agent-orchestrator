@@ -3,7 +3,8 @@ import { NextRequest } from "next/server";
 import {
   SessionNotFoundError,
   SessionNotRestorableError,
-  SessionNotFoundError,
+  type LifecycleManager,
+  type SCMWebhookEvent,
   type Session,
   type SessionManager,
   type OrchestratorConfig,
@@ -126,6 +127,13 @@ const mockSessionManager: SessionManager = {
   }),
 };
 
+const mockLifecycleManager: LifecycleManager = {
+  start: vi.fn(),
+  stop: vi.fn(),
+  getStates: vi.fn(() => new Map()),
+  check: vi.fn(async () => undefined),
+};
+
 const mockSCM: SCM = {
   name: "github",
   detectPR: vi.fn(async () => null),
@@ -188,6 +196,7 @@ vi.mock("@/lib/services", () => ({
     config: mockConfig,
     registry: mockRegistry,
     sessionManager: mockSessionManager,
+    lifecycleManager: mockLifecycleManager,
   })),
   getSCM: vi.fn(() => mockSCM),
 }));
@@ -204,6 +213,7 @@ import { POST as killPOST } from "@/app/api/sessions/[id]/kill/route";
 import { POST as restorePOST } from "@/app/api/sessions/[id]/restore/route";
 import { POST as remapPOST } from "@/app/api/sessions/[id]/remap/route";
 import { POST as mergePOST } from "@/app/api/prs/[id]/merge/route";
+import { POST as webhooksPOST } from "@/app/api/webhooks/[...slug]/route";
 import { GET as eventsGET } from "@/app/api/events/route";
 import { GET as observabilityGET } from "@/app/api/observability/route";
 
@@ -221,6 +231,13 @@ beforeEach(() => {
   (mockSessionManager.get as ReturnType<typeof vi.fn>).mockImplementation(
     async (id: string) => testSessions.find((s) => s.id === id) ?? null,
   );
+  (mockLifecycleManager.check as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+  mockConfig.projects["my-app"] = {
+    ...mockConfig.projects["my-app"],
+    scm: { plugin: "github" },
+  };
+  (mockSCM.verifyWebhook as ReturnType<typeof vi.fn> | undefined)?.mockReset?.();
+  (mockSCM.parseWebhook as ReturnType<typeof vi.fn> | undefined)?.mockReset?.();
 });
 
 describe("API Routes", () => {
@@ -830,6 +847,73 @@ describe("API Routes", () => {
       expect(res.status).toBe(409);
       const data = await res.json();
       expect(data.error).toMatch(/merged/);
+    });
+  });
+
+  describe("POST /api/webhooks/[...slug]", () => {
+    it("logs lifecycle check failures while returning 202", async () => {
+      const webhookEvent: SCMWebhookEvent = {
+        provider: "github",
+        kind: "push",
+        action: "updated",
+        rawEventType: "push",
+        repository: { owner: "acme", name: "my-app" },
+        branch: "feat/hook-fail",
+        data: {},
+      };
+
+      mockConfig.projects["my-app"] = {
+        ...mockConfig.projects["my-app"],
+        scm: {
+          plugin: "github",
+          webhook: {
+            enabled: true,
+            path: "/api/webhooks/github",
+          },
+        },
+      };
+
+      (mockSCM as SCM & {
+        verifyWebhook: ReturnType<typeof vi.fn>;
+        parseWebhook: ReturnType<typeof vi.fn>;
+      }).verifyWebhook = vi.fn(async () => ({ ok: true }));
+      (mockSCM as SCM & {
+        verifyWebhook: ReturnType<typeof vi.fn>;
+        parseWebhook: ReturnType<typeof vi.fn>;
+      }).parseWebhook = vi.fn(async () => webhookEvent);
+      (mockSessionManager.list as ReturnType<typeof vi.fn>).mockResolvedValue([
+        makeSession({
+          id: "backend-3",
+          projectId: "my-app",
+          status: "working",
+          activity: "active",
+          branch: "feat/hook-fail",
+        }),
+      ]);
+      (mockLifecycleManager.check as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error("boom"),
+      );
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const req = new Request("http://localhost:3000/api/webhooks/github", {
+          method: "POST",
+          body: JSON.stringify({}),
+          headers: { "Content-Type": "application/json" },
+        });
+
+        const res = await webhooksPOST(req);
+        expect(res.status).toBe(202);
+
+        const data = await res.json();
+        expect(data.lifecycleErrors).toEqual(["session backend-3: boom"]);
+        expect(errorSpy).toHaveBeenCalledWith(
+          "[webhook] lifecycle checks failed:",
+          ["session backend-3: boom"],
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
   });
 
