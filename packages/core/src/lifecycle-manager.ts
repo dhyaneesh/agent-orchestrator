@@ -410,10 +410,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         message: `Reaction '${reactionKey}' escalated after ${tracker.attempts} attempts`,
         data: { reactionKey, attempts: tracker.attempts },
       });
-      await notifyHuman(event, reactionConfig.priority ?? "urgent");
+      const delivered = await notifyHuman(event, reactionConfig.priority ?? "urgent");
       return {
         reactionType: reactionKey,
-        success: true,
+        success: delivered,
         action: "escalated",
         escalated: true,
       };

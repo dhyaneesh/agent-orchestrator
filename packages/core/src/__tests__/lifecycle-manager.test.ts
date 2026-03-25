@@ -1343,6 +1343,105 @@ describe("reactions", () => {
     expect(metadata?.["notifier.desktop.status"]).toBe("ok");
   });
 
+  it("does not persist review dispatch hashes when escalation notify delivery fails", async () => {
+    const failingNotifier: Notifier = {
+      name: "desktop",
+      notify: vi.fn().mockRejectedValue(new Error("OpenClaw unavailable")),
+    };
+
+    const mockSCM: SCM = {
+      name: "mock-scm",
+      detectPR: vi.fn(),
+      getPRState: vi.fn().mockResolvedValue("open"),
+      mergePR: vi.fn(),
+      closePR: vi.fn(),
+      getCIChecks: vi.fn(),
+      getCISummary: vi.fn().mockResolvedValue("passing"),
+      getReviews: vi.fn(),
+      getReviewDecision: vi.fn().mockResolvedValue("none"),
+      getPendingComments: vi.fn().mockResolvedValue([
+        {
+          id: "c1",
+          author: "reviewer",
+          body: "Please rename this helper",
+          path: "src/app.ts",
+          line: 12,
+          isResolved: false,
+          createdAt: new Date(),
+          url: "https://example.com/comment/1",
+        },
+      ]),
+      getAutomatedComments: vi.fn().mockResolvedValue([]),
+      getMergeability: vi.fn(),
+    };
+
+    const registryWithNotifier: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier" && name === "desktop") return failingNotifier;
+        return null;
+      }),
+    };
+
+    const configWithEscalation = {
+      ...config,
+      defaults: {
+        ...config.defaults,
+        notifiers: ["desktop"],
+      },
+      notificationRouting: {
+        ...config.notificationRouting,
+        urgent: ["desktop"],
+      },
+      reactions: {
+        ...config.reactions,
+        "changes-requested": {
+          auto: true,
+          action: "send-to-agent" as const,
+          message: "Handle review comments.",
+          retries: 1,
+          escalateAfter: 1,
+          priority: "urgent" as const,
+        },
+      },
+    };
+
+    const session = makeSession({ status: "pr_open", pr: makePR() });
+    vi.mocked(mockSessionManager.get).mockResolvedValue(session);
+    vi.mocked(mockSessionManager.send).mockRejectedValue(new Error("agent unavailable"));
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "pr_open",
+      project: "my-app",
+    });
+
+    const lm = createLifecycleManager({
+      config: configWithEscalation,
+      registry: registryWithNotifier,
+      sessionManager: mockSessionManager,
+    });
+
+    await lm.check("app-1");
+    let metadata = readMetadataRaw(sessionsDir, "app-1");
+    expect(failingNotifier.notify).not.toHaveBeenCalled();
+    expect(metadata?.["lastPendingReviewDispatchHash"]).toBeUndefined();
+
+    await lm.check("app-1");
+    metadata = readMetadataRaw(sessionsDir, "app-1");
+    expect(failingNotifier.notify).toHaveBeenCalledTimes(1);
+    expect(metadata?.["lastPendingReviewDispatchHash"]).toBeUndefined();
+
+    await lm.check("app-1");
+    metadata = readMetadataRaw(sessionsDir, "app-1");
+    expect(failingNotifier.notify).toHaveBeenCalledTimes(2);
+    expect(metadata?.["lastPendingReviewDispatchHash"]).toBeUndefined();
+  });
+
   it("does not double-send when changes_requested transition already triggered the reaction", async () => {
     config.reactions = {
       "changes-requested": {
