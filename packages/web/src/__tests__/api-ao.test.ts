@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LifecycleManager, OrchestratorConfig, PluginRegistry, Session, SessionManager } from "@composio/ao-core";
 import {
   SessionNotFoundError,
   SessionNotRestorableError,
   WorkspaceMissingError,
+  type LifecycleManager,
+  type OrchestratorConfig,
+  type PluginRegistry,
+  type Session,
+  type SessionManager,
 } from "@composio/ao-core";
 import { getServices } from "@/lib/services";
 import { getCachedConfig } from "@/lib/config-cache";

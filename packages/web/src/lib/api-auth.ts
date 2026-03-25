@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import type { OrchestratorConfig } from "@composio/ao-core";
-import { getCachedConfig } from "./config-cache.js";
-import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "./observability.js";
+import { getCachedConfig } from "./config-cache";
+import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "./observability";
 
 type AuthContext = {
   config?: OrchestratorConfig;

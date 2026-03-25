@@ -41,7 +41,7 @@ import pluginWorkspaceWorktree from "@composio/ao-plugin-workspace-worktree";
 import pluginScmGithub from "@composio/ao-plugin-scm-github";
 import pluginTrackerGithub from "@composio/ao-plugin-tracker-github";
 import pluginTrackerLinear from "@composio/ao-plugin-tracker-linear";
-import { getCachedConfig } from "./config-cache.js";
+import { getCachedConfig } from "./config-cache";
 
 export interface Services {
   config: OrchestratorConfig;

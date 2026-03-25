@@ -28,7 +28,6 @@ import { getSessionsDir, getProjectBaseDir, getWorktreesDir } from "../paths.js"
 import {
   SessionNotRestorableError,
   WorkspaceMissingError,
-  SessionNotFoundError,
   isIssueNotFoundError,
   type OrchestratorConfig,
   type PluginRegistry,

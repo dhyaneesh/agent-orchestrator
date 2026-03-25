@@ -1,3 +1,4 @@
+import type * as cryptoModule from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockTimingSafeEqual = vi.fn();
@@ -13,7 +14,7 @@ describe("api-auth", () => {
     mockTimingSafeEqual.mockReturnValueOnce(false);
 
     vi.doMock("node:crypto", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("node:crypto")>();
+      const actual = await importOriginal<typeof cryptoModule>();
       return {
         ...actual,
         timingSafeEqual: mockTimingSafeEqual,
